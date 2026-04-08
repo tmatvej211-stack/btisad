@@ -14,7 +14,7 @@ import asyncio
 from collections import defaultdict
 from pathlib import Path
 
-API_TOKEN = ' '
+API_TOKEN = '8664269263:AAGBj1U7zfKgyslXNmgJOTVuMbpnh-o_AJE'
 DATA_FILE = 'bot_data.json'
 LINKS = {
     "android": "https://t.me/GidBaseBot",

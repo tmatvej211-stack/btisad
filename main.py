@@ -13,13 +13,14 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import asyncio
 from collections import defaultdict
 from pathlib import Path
+import re
 
 API_TOKEN = '8664269263:AAGBj1U7zfKgyslXNmgJOTVuMbpnh-o_AJE'
 DATA_FILE = 'bot_data.json'
 LINKS = {
-    "android": "https://t.me/GidBaseBot",
-    "ios": "https://t.me/GidBaseBot",
-    "news": "https://t.me/nfthom"
+    "android": "https://t.me/GidBasecheckbot",
+    "ios": "https://t.me/GidBasecheckbot",
+    "news": "https://t.me/raygifts"
 }
 
 # Настройка логирования
@@ -52,7 +53,6 @@ def load_data():
         if Path(DATA_FILE).exists():
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Добавляем обязательные ключи, если их нет
                 if "admins" not in data:
                     data["admins"] = [123456789, 7674627532]
                 if "garants" not in data:
@@ -166,7 +166,6 @@ async def process_report(message: types.Message, report_data: dict, proof_file_i
         bot_data["reports"] = reports
         save_data(bot_data)
         
-        # Отправка уведомления админам
         for admin_id in ADMINS:
             try:
                 admin_message = (
@@ -178,13 +177,13 @@ async def process_report(message: types.Message, report_data: dict, proof_file_i
                 )
                 
                 if proof_file_id:
-                    if proof_file_id.startswith("AgAC"):  # Это фото
+                    if proof_file_id.startswith("AgAC"):
                         await bot.send_photo(
                             chat_id=admin_id,
                             photo=proof_file_id,
                             caption=admin_message
                         )
-                    else:  # Это документ
+                    else:
                         await bot.send_document(
                             chat_id=admin_id,
                             document=proof_file_id,
@@ -216,12 +215,12 @@ async def process_garant_info(message: types.Message, state: FSMContext):
         if garant_info.startswith('@'):
             username = garant_info[1:]
             garants[username] = {"id": username, "searches": 0}
-            await message.answer(f"Гарант @{username} добавлен в базу!")
+            await message.answer(f"✅ Гарант @{username} добавлен в базу!")
         elif garant_info.isdigit():
             garants[f"id_{garant_info}"] = {"id": int(garant_info), "searches": 0}
-            await message.answer(f"Гарант с ID {garant_info} добавлен в базу!")
+            await message.answer(f"✅ Гарант с ID {garant_info} добавлен в базу!")
         else:
-            await message.answer("Некорректный формат. Отправьте username (@username) или ID (только цифры)")
+            await message.answer("❌ Некорректный формат. Отправьте username (@username) или ID (только цифры)")
         
         bot_data["garants"] = dict(garants)
         save_data(bot_data)
@@ -244,12 +243,12 @@ async def process_scammer_info(message: types.Message, state: FSMContext):
         if scammer_info.startswith('@'):
             username = scammer_info[1:]
             scammers[username] = 0
-            await message.answer(f"Мошенник @{username} добавлен в базу!")
+            await message.answer(f"✅ Мошенник @{username} добавлен в базу!")
         elif scammer_info.isdigit():
             scammers[f"id_{scammer_info}"] = 0
-            await message.answer(f"Мошенник с ID {scammer_info} добавлен в базу!")
+            await message.answer(f"✅ Мошенник с ID {scammer_info} добавлен в базу!")
         else:
-            await message.answer("Некорректный формат. Отправьте username (@username) или ID (только цифры)")
+            await message.answer("❌ Некорректный формат. Отправьте username (@username) или ID (только цифры)")
         
         bot_data["scammers"] = dict(scammers)
         save_data(bot_data)
@@ -259,19 +258,109 @@ async def process_scammer_info(message: types.Message, state: FSMContext):
     finally:
         await state.clear()
 
+# НОВАЯ КОМАНДА: /boost @username количество - накрутка для любого пользователя
+@dp.message(Command("boost"), F.from_user.id.in_(ADMINS))
+async def boost_searches(message: types.Message):
+    try:
+        args = message.text.split()
+        
+        # Проверка формата: /boost @username 50
+        if len(args) != 3:
+            await message.answer(
+                "❌ Неверный формат!\n\n"
+                "📌 Используйте: <code>/boost @username количество</code>\n\n"
+                "Пример: <code>/boost @LolzTradeRobot 50</code>",
+                parse_mode="HTML"
+            )
+            return
+        
+        username_input = args[1]
+        try:
+            amount = int(args[2])
+        except ValueError:
+            await message.answer("❌ Количество должно быть числом!")
+            return
+        
+        if not username_input.startswith('@'):
+            await message.answer("❌ Username должен начинаться с @")
+            return
+        
+        if amount <= 0:
+            await message.answer("❌ Количество должно быть больше 0!")
+            return
+        
+        search_key = username_input.lower()
+        
+        # Накручиваем поиски
+        user_searches[search_key] += amount
+        
+        bot_data["user_searches"] = dict(user_searches)
+        save_data(bot_data)
+        
+        await message.answer(
+            f"✅ <b>Накрутка выполнена!</b>\n\n"
+            f"👤 Пользователь: {username_input}\n"
+            f"📈 Прибавлено: +{amount} поисков\n"
+            f"📊 Теперь искали: {user_searches[search_key]} раз(а)",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logging.error(f"Ошибка накрутки: {e}")
+        await message.answer("❌ Произошла ошибка при накрутке")
+
 @dp.message()
 async def check_user(message: types.Message):
     try:
         text = message.text.strip()
         search_key = text.lower()
-        user_searches[search_key] += 1
-        bot_data["user_searches"] = dict(user_searches)
-        save_data(bot_data)
-
-        # Форматирование ссылок
+        
         android_link = f'<a href="{LINKS["android"]}">📱 Android</a>'
         ios_link = f'<a href="{LINKS["ios"]}">🍎 Apple</a>'
         news_link = f'<a href="{LINKS["news"]}">❇️ NFT Подарки | Новости</a>'
+
+        # Обработка @LolzTradeRobot - НОВЫЙ КРАСИВЫЙ ТЕКСТ
+        if text.lower() == "@lolztraderobot":
+            user_searches[search_key] += 1
+            bot_data["user_searches"] = dict(user_searches)
+            save_data(bot_data)
+            
+            current_searches = user_searches[search_key]
+            
+            response = (
+                f"✨ <b>⭐ ТОП ГАРАНТ ⭐</b> ✨\n\n"
+                f"┌─────────────────────┐\n"
+                f"│  🤖 @LolzTradeRobot  │\n"
+                f"│  🆔 ID: LolzTradeRobot │\n"
+                f"└─────────────────────┘\n\n"
+                f"📊 <b>Статистика:</b> искали {current_searches} раз\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🎮 <b>Надёжный бот-гарант</b> в сфере игр 🎮\n"
+                f"💎 и прочих услуг 💎\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"✅ <b>Почему мы?</b>\n"
+                f"├ 🔒 100% безопасность сделок\n"
+                f"├ ⚡ Мгновенная обработка\n"
+                f"├ 🕐 Работа 24/7 без выходных\n"
+                f"├ 📝 Прозрачные условия\n"
+                f"└ 🏆 Опыт работы — 2+ года\n\n"
+                f"💰 <b>Условия:</b>\n"
+                f"├ Комиссия: 2%\n"
+                f"└ Мин. сумма: 100₽\n\n"
+                f"🔗 <b>Все ресурсы:</b> @GidBasecheckbot\n\n"
+                f"🔻 <b>Вечные Ссылки</b> 🔻\n"
+                f"├ {android_link}\n"
+                f"└ {ios_link}\n\n"
+                f"📰 <b>Самые актуальные новости NFT:</b>\n"
+                f"└ {news_link}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💫 <i>@LolzTradeRobot — ваш идеальный помощник!</i> 💫"
+            )
+            await send_photo_or_text(message, "picturee.jpeg", response)
+            return
+        
+        user_searches[search_key] += 1
+        bot_data["user_searches"] = dict(user_searches)
+        save_data(bot_data)
 
         # Проверка на гаранта
         if text.startswith('@'):
@@ -283,7 +372,7 @@ async def check_user(message: types.Message):
                     f"👀 Искали: {garants[username]['searches']} раз\n\n"
                     f"Надежный гарант ✅\n"
                     f"Комиссия: 2% | 100₽ мин.\n"
-                    f"Все ресурсы: @GidBaseBot\n\n"
+                    f"Все ресурсы: @GidBasecheckbot\n\n"
                     f"🔻 Вечные Ссылки 🔻\n"
                     f"┌ {android_link}\n"
                     f"└ {ios_link}\n\n"
@@ -301,7 +390,7 @@ async def check_user(message: types.Message):
                 response = (
                     f"🔴 МОШЕННИК: @{username} | ID: {hcode(scammers.get(f'id_{username}', 'N/A'))}\n"
                     f"👀 Искали: {scammers[username]} раз\n\n"
-                    f"❌ Пользователь мошенник! Найден в базе @GidBaseBot\n"
+                    f"❌ Пользователь мошенник! Найден в базе @GidBasecheckbot\n"
                     f"Был замечен в скаме. Добавьте его в чс, чтобы не тратить свое время.\n\n"
                     f"🔻 Вечные Ссылки 🔻\n"
                     f"┌ {android_link}\n"
